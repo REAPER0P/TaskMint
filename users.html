@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TaskMint</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&family=Roboto&display=swap" rel="stylesheet">
+
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<style>
+*{-webkit-tap-highlight-color:transparent}
+body{
+margin:0;
+font-family:Poppins,Roboto;
+background:#0b0f1a;
+color:#fff;
+}
+.hidden{display:none}
+.screen{padding:12px;padding-bottom:90px}
+.card{
+background:#12182b;
+padding:15px;
+margin-bottom:12px;
+border-radius:14px;
+box-shadow:0 0 15px #00f7ff33;
+}
+input,button{
+width:100%;
+min-height:48px;
+border:none;
+border-radius:10px;
+margin-top:10px;
+font-size:14px;
+}
+input{background:#1c2340;color:#fff;padding:12px}
+button{
+background:linear-gradient(45deg,#00f7ff,#7a5cff);
+font-weight:600;
+}
+nav{
+position:fixed;
+bottom:0;
+width:100%;
+height:65px;
+display:flex;
+justify-content:space-around;
+background:#12182b;
+}
+nav button{
+width:auto;
+font-size:11px;
+}
+.header{
+text-align:center;
+font-size:22px;
+padding:12px;
+color:#00f7ff;
+}
+.game{
+display:flex;
+justify-content:space-between;
+align-items:center;
+background:#1c2340;
+padding:12px;
+border-radius:12px;
+margin-top:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="splash" class="screen header">TaskMint</div>
+
+<div id="login" class="screen hidden">
+<div class="card">
+<input id="phone" placeholder="+91XXXXXXXXXX">
+<input id="ref" placeholder="Referral Code (optional)">
+<div id="recaptcha"></div>
+<button onclick="sendOTP()">Send OTP</button>
+</div>
+<div class="card hidden" id="otpBox">
+<input id="otp">
+<button onclick="verify()">Verify</button>
+</div>
+</div>
+
+<div id="home" class="screen hidden">
+<div class="header">TaskMint</div>
+<div id="notice"></div>
+<div class="card">
+Wallet: <b id="bal">0</b> coins
+<button onclick="daily()">Daily Check-in</button>
+</div>
+<div class="card">
+<h3>Games</h3>
+<div id="games"></div>
+</div>
+</div>
+
+<div id="wallet" class="screen hidden">
+<div class="card">
+<input id="upi" placeholder="UPI ID">
+<input id="amt" placeholder="Amount">
+<p id="min"></p>
+<button onclick="withdraw()">Withdraw</button>
+</div>
+<div class="card">
+<h3>History</h3>
+<div id="history"></div>
+</div>
+</div>
+
+<div id="settings" class="screen hidden">
+<div class="card">
+<button onclick="logout()">Logout</button>
+</div>
+</div>
+
+<nav id="nav" class="hidden">
+<button onclick="show('home')">Home</button>
+<button onclick="show('wallet')">Wallet</button>
+<button onclick="show('settings')">Settings</button>
+</nav>
+
+<script>
+const firebaseConfig={
+apiKey:"AIzaSyAC_a2bMP0GpHTzAPQ8Ng8F4z6nZyhl6Jg",
+authDomain:"taskmint-799be.firebaseapp.com",
+databaseURL:"https://taskmint-799be-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+firebase.initializeApp(firebaseConfig);
+
+const auth=firebase.auth(),db=firebase.database();
+let uid,conf;
+
+setTimeout(()=>{splash.classList.add("hidden");login.classList.remove("hidden")},1000);
+window.recaptchaVerifier=new firebase.auth.RecaptchaVerifier('recaptcha');
+
+function sendOTP(){
+auth.signInWithPhoneNumber(phone.value,recaptchaVerifier).then(c=>{
+conf=c;otpBox.classList.remove("hidden");
+});
+}
+function verify(){
+conf.confirm(otp.value).then(r=>{
+uid=r.user.uid;
+db.ref("users/"+uid).once("value",s=>{
+if(!s.exists()){
+db.ref("users/"+uid).set({
+phone:phone.value,
+coins:0,
+ref:Math.floor(100000+Math.random()*900000),
+parent:ref.value||""
+});
+}
+load();
+});
+}
+function load(){
+login.classList.add("hidden");
+home.classList.remove("hidden");
+nav.classList.remove("hidden");
+
+db.ref("users/"+uid+"/coins").on("value",s=>bal.innerText=s.val()||0);
+db.ref("settings/notice").on("value",s=>notice.innerHTML=s.val()?`<div class="card">${s.val()}</div>`:"");
+db.ref("settings/minWithdraw").on("value",s=>min.innerText="Min withdraw: "+(s.val()||100));
+
+db.ref("games").on("value",s=>{
+games.innerHTML="";
+s.forEach(g=>{
+games.innerHTML+=`
+<div class="game">
+${g.val().name}
+<button onclick="play('${g.key}','${g.val().url}',${g.val().reward})">Play</button>
+</div>`;
+});
+});
+
+db.ref("withdraw/"+uid).on("value",s=>{
+history.innerHTML="";
+s.forEach(w=>{
+history.innerHTML+=`${w.val().amount} - ${w.val().status}<br>`;
+});
+});
+}
+
+function play(id,url,reward){
+db.ref("users/"+uid+"/lastPlay/"+id).once("value",s=>{
+let now=Date.now();
+if(s.val() && now-s.val()<300000){alert("Wait 5 min");return;}
+alert("Play 30 seconds");
+setTimeout(()=>{
+window.open(url,"_blank");
+db.ref("users/"+uid+"/coins").transaction(c=>(c||0)+reward);
+db.ref("users/"+uid+"/lastPlay/"+id).set(now);
+},30000);
+});
+}
+function daily(){
+let d=new Date().toDateString();
+db.ref("users/"+uid+"/last").once("value",s=>{
+if(s.val()!=d){
+db.ref("settings/dailyReward").once("value",r=>{
+db.ref("users/"+uid).update({
+coins:firebase.database.ServerValue.increment(r.val()||10),
+last:d
+});
+});
+}else alert("Already claimed");
+});
+}
+function withdraw(){
+db.ref("settings/minWithdraw").once("value",m=>{
+let minw=m.val()||100;
+if(parseInt(amt.value)<minw){alert("Min "+minw);return;}
+db.ref("withdraw/"+uid).push({
+upi:upi.value,
+amount:parseInt(amt.value),
+status:"pending",
+time:Date.now()
+});
+alert("Requested");
+});
+}
+function show(id){
+document.querySelectorAll(".screen").forEach(s=>s.classList.add("hidden"));
+document.getElementById(id).classList.remove("hidden");
+window.scrollTo(0,0);
+}
+function logout(){auth.signOut();location.reload()}
+</script>
+
+</body>
+</html>
